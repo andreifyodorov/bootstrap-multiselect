@@ -408,10 +408,11 @@ describe('Bootstrap Multiselect "Dataprovider"', function() {
 
 describe('Bootstrap Multiselect "Select All".', function() {
 
-    var onSelectAllTriggered = false;
-    var onDeselectAllTriggered = false;
+    var onSelectAllTriggered, onDeselectAllTriggered;
 
     beforeEach(function() {
+        onSelectAllTriggered = false;
+        onDeselectAllTriggered = false;
         var $select = $('<select id="multiselect" multiple="multiple"></select>');
 
         for (var i = 1; i < 100; i++) {
@@ -565,6 +566,18 @@ describe('Bootstrap Multiselect "Select All".', function() {
 
     it('Should trigger onSelectAll on function call.', function() {
         $('#multiselect').multiselect('selectAll', true, true);
+        expect(onSelectAllTriggered).toBe(true);
+    });
+
+    it('Should trigger onSelectAll on select all click.', function() {
+        expect($('#multiselect option:selected').length).toBe(0);
+        expect($('#multiselect-container input[value="multiselect-all"]').prop('checked')).toBe(false);
+
+        $('#multiselect-container input[value="multiselect-all"]').prop('checked', true);
+        $('#multiselect-container input[value="multiselect-all"]').trigger('change');
+
+        expect($('#multiselect option:selected').length).toBe(99);
+
         expect(onSelectAllTriggered).toBe(true);
     });
 

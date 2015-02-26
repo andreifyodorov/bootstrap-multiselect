@@ -377,7 +377,7 @@
                         this.toggleSelectAll();
                     }
                     else {
-                        this.toggleAll(checked);
+                        this.toggleAll(checked, undefined, true);
                     }
                 }
                 else if (isSelectNoneOption) {
