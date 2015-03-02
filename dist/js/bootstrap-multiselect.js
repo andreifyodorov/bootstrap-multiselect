@@ -11,7 +11,7 @@
 
     function forEach(array, callback) {
         for (var index = 0; index < array.length; ++index) {
-            callback(array[index], index);
+            if (callback(array[index], index) === false) break;
         }
     }
 
@@ -366,8 +366,7 @@
                 }
 
                 // Get the corresponding option.
-                var value = $target.val();
-                var $option = this.getOptionByValue(value);
+                var $option = $target.prop('$option');
 
                 var $optionsNotThis = $('option', this.$select).not($option);
                 var $checkboxesNotThis = $('input', this.$container).not($target);
@@ -472,10 +471,7 @@
 
                         for (var i = 0, j = range.length; i < j; i++) {
                             var $checkbox = $(range[i]);
-
-                            var $option = this.getOptionByValue($checkbox.val());
-
-                            $option.prop('selected', checked);
+                            $checkbox.$option.prop('selected', checked);
                         }
                     }
 
@@ -580,7 +576,7 @@
 
             var $checkbox = $('<input/>').attr('type', inputType);
             $element.prop('$checkbox', $checkbox);
-            $checkbox.prop('$element', $element);
+            $checkbox.prop('$option', $element);
 
             if (this.options.checkboxName) {
                 $checkbox.attr('name', this.options.checkboxName);
@@ -826,9 +822,7 @@
          */
         refresh: function() {
             $('option', this.$select).each($.proxy(function(index, element) {
-                var $input = $('li input', this.$ul).filter(function() {
-                    return $(this).val() === $(element).val();
-                });
+                var $input = $(element).prop('$checkbox');
 
                 if ($(element).is(':selected')) {
                     $input.prop('checked', true);
@@ -864,53 +858,48 @@
             this.updateSelectAll();
         },
 
-        /**
-         * Select all options of the given values.
-         *
-         * If triggerOnChange is set to true, the on change event is triggered if
-         * and only if one value is passed.
-         *
-         * @param {Array} selectValues
-         * @param {Boolean} triggerOnChange
-         */
-        select: function(selectValues, triggerOnChange) {
+
+        toggle: function(checked, selectValues, triggerOnChange) {
             if(!$.isArray(selectValues)) {
                 selectValues = [selectValues];
             }
-
-            for (var i = 0; i < selectValues.length; i++) {
-                var value = selectValues[i];
-
-                if (value === null || value === undefined) {
-                    continue;
-                }
-
-                var $option = this.getOptionByValue(value);
-                var $checkbox = this.getInputByValue(value);
-
-                if($option === undefined || $checkbox === undefined) {
-                    continue;
-                }
-
-                if (!this.options.multiple) {
-                    this.deselectAll(false);
-                }
-
-                if (this.options.selectedClass) {
-                    $checkbox.closest('li')
-                        .addClass(this.options.selectedClass);
-                }
-
-                $checkbox.prop('checked', true);
-                $option.prop('selected', true);
+            if (checked && !this.options.multiple) {
+                selectValues = [selectValues.pop()];
+                this.deselectAll(false);
             }
+
+            var selectedCount = 0;
+            var options = $("option", this.$select);
+            options.each($.proxy(function(index, option) {
+                var $option = $(option);
+                $.each(selectValues, $.proxy(function(index, value) {
+                    if (value === $option.val()) {
+                        var $checkbox = $option.prop('$checkbox');
+                        $option.prop('selected', checked);
+                        $checkbox.prop('checked', checked)
+                        $checkbox.closest('li').toggleClass(this.options.selectedClass, checked);
+
+                        selectValues.splice(index, 1);
+                        selectedCount++;
+
+                        return false;
+                    }
+                }, this));
+                return selectValues.length > 0;
+            }, this));
 
             this.updateButtonText();
             this.updateSelectAll();
 
-            if (triggerOnChange && selectValues.length === 1) {
+            if (triggerOnChange && selectedCount == 1) {
                 this.options.onChange($option, true);
             }
+        },
+        select: function(selectValues, triggerOnChange) {
+            return this.toggle(true, selectValues, triggerOnChange);
+        },
+        deselect: function(deselectValues, triggerOnChange) {
+            return this.toggle(false, deselectValues, triggerOnChange);
         },
 
         /**
@@ -922,64 +911,13 @@
             this.updateSelectAll();
         },
 
-        /**
-         * Deselects all options of the given values.
-         *
-         * If triggerOnChange is set to true, the on change event is triggered, if
-         * and only if one value is passed.
-         *
-         * @param {Array} deselectValues
-         * @param {Boolean} triggerOnChange
-         */
-        deselect: function(deselectValues, triggerOnChange) {
-            if(!$.isArray(deselectValues)) {
-                deselectValues = [deselectValues];
-            }
-
-            for (var i = 0; i < deselectValues.length; i++) {
-                var value = deselectValues[i];
-
-                if (value === null || value === undefined) {
-                    continue;
-                }
-
-                var $option = this.getOptionByValue(value);
-                var $checkbox = this.getInputByValue(value);
-
-                if($option === undefined || $checkbox === undefined) {
-                    continue;
-                }
-
-                if (this.options.selectedClass) {
-                    $checkbox.closest('li')
-                        .removeClass(this.options.selectedClass);
-                }
-
-                $checkbox.prop('checked', false);
-                $option.prop('selected', false);
-            }
-
-            this.updateButtonText();
-            this.updateSelectAll();
-
-            if (triggerOnChange && deselectValues.length === 1) {
-                this.options.onChange($option, false);
-            }
-        },
-
         toggleSelectAll: function() {
             var allBoxes = $("li:not(.multiselect-item) input:enabled", this.$ul);
             var checkedBoxes = allBoxes.filter(":checked");
-            if (checkedBoxes.length == allBoxes.length) {
-                allBoxes.prop('checked', false);
-                allBoxes.closest('li').removeClass(this.options.selectedClass);
-                $("option:enabled", this.$select).prop('selected', false);
-            }
-            else {
-                allBoxes.prop('checked', true);
-                allBoxes.closest('li').addClass(this.options.selectedClass);
-                $("option:enabled", this.$select).prop('selected', true);
-            }
+            var checked = checkedBoxes.length == allBoxes.length;
+            allBoxes.prop('checked', checked);
+            allBoxes.closest('li').toggleClass(this.options.selectedClass, checked);
+            $("option:enabled", this.$select).prop('selected', checked);
             this.updateSelectAll();
         },
 
@@ -1246,44 +1184,6 @@
          */
         getSelected: function() {
             return $('option', this.$select).filter(":selected");
-        },
-
-        /**
-         * Gets a select option by its value.
-         *
-         * @param {String} value
-         * @returns {jQuery}
-         */
-        getOptionByValue: function (value) {
-
-            var options = $('option', this.$select);
-            var valueToCompare = value.toString();
-
-            for (var i = 0; i < options.length; i = i + 1) {
-                var option = options[i];
-                if (option.value === valueToCompare) {
-                    return $(option);
-                }
-            }
-        },
-
-        /**
-         * Get the input (radio/checkbox) by its value.
-         *
-         * @param {String} value
-         * @returns {jQuery}
-         */
-        getInputByValue: function (value) {
-
-            var checkboxes = $('li input', this.$ul);
-            var valueToCompare = value.toString();
-
-            for (var i = 0; i < checkboxes.length; i = i + 1) {
-                var checkbox = checkboxes[i];
-                if (checkbox.value === valueToCompare) {
-                    return $(checkbox);
-                }
-            }
         },
 
         /**
