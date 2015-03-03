@@ -662,3 +662,46 @@ describe('Bootstrap Multiselect Specific Issues', function() {
         $selection.remove();
     });
 });
+
+describe('Bootstrap Multiselect Knockout interaction.', function() {
+    var options = [];
+    for (var i = 1; i < 100; i++) {
+        options.push({name: "option" + i, value: i});
+    }
+
+    beforeEach(function() {
+        var $select = $('<select id="multiselect" multiple="multiple"></select>');
+        $('body').append($select);
+    });
+
+    it('Should pass checked elements to observable.', function() {
+        var selectedOptions = ko.observableArray();
+        $('#multiselect').each(function() {
+            ko.applyBindingsToNode(this, {
+                options: options,
+                optionsText: 'name',
+                optionsValue: 'value',
+                selectedOptions: selectedOptions,
+                multiselect: {
+                    buttonContainer: '<div id="multiselect-container"></div>'
+                }
+            });
+        });
+
+        expect(selectedOptions().length).toBe(0);
+
+        $('#multiselect-container li input[value="1"]').prop('checked', true);
+        $('#multiselect-container li input[value="1"]').trigger('change');
+
+        expect(selectedOptions().length).toBe(1);
+
+        $('#multiselect').multiselect('select', '2', true);
+
+        expect(selectedOptions().length).toBe(2);
+    });
+
+    afterEach(function() {
+        $('#multiselect').multiselect('destroy');
+        $('#multiselect').remove();
+    });
+});

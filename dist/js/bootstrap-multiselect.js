@@ -9,12 +9,6 @@
 
     "use strict";// jshint ;_;
 
-    function forEach(array, callback) {
-        for (var index = 0; index < array.length; ++index) {
-            if (callback(array[index], index) === false) break;
-        }
-    }
-
     if (typeof ko !== 'undefined' && ko.bindingHandlers && !ko.bindingHandlers.multiselect) {
         ko.bindingHandlers.multiselect = {
             after: ['options', 'value', 'selectedOptions'],
@@ -23,11 +17,8 @@
                 var $element = $(element);
                 var config = ko.toJS(valueAccessor());
 
-                forEach(['isAll', 'isNone'], function(isSomething) {
-                    if (allBindings.has(isSomething)) {
-                        config[isSomething] = allBindings.get(isSomething);
-                    }
-                });
+                if (allBindings.has('isAny')) config['isAll'] = allBindings.get('isAny');
+                if (allBindings.has('isNone')) config['isNone'] = allBindings.get('isNone');
 
                 $element.multiselect(config);
 
@@ -94,7 +85,7 @@
                 var config = ko.toJS(valueAccessor());
 
                 $element.multiselect('setOptions', config);
-                $element.multiselect('rebuild');
+                // $element.multiselect('rebuild');
             }
         };
     }
@@ -204,7 +195,6 @@
             checkboxName: false,
             includeSelectAllOption: false,
             includeSelectAllIfMoreThan: 0,
-            selectAllToggles: false,
             selectAllText: 'All',
             selectAllValue: 'multiselect-all',
             selectAllName: false,
@@ -372,7 +362,7 @@
                 var $checkboxesNotThis = $('input', this.$container).not($target);
 
                 if (isSelectAllOption) {
-                    if (this.options.selectAllToggles) {
+                    if (this.options.isAll) {
                         this.toggleSelectAll();
                     }
                     else {
@@ -868,7 +858,6 @@
                 this.deselectAll(false);
             }
 
-            var selectedCount = 0;
             var options = $("option", this.$select);
             options.each($.proxy(function(index, option) {
                 var $option = $(option);
@@ -876,24 +865,26 @@
                     if (value === $option.val()) {
                         var $checkbox = $option.prop('$checkbox');
                         $option.prop('selected', checked);
-                        $checkbox.prop('checked', checked)
+                        $checkbox.prop('checked', checked);
                         $checkbox.closest('li').toggleClass(this.options.selectedClass, checked);
 
-                        selectValues.splice(index, 1);
-                        selectedCount++;
+                        if (triggerOnChange) {
+                            this.options.onChange($option, checked);
+                        }
 
+                        selectValues.splice(index, 1);
                         return false;
                     }
                 }, this));
                 return selectValues.length > 0;
             }, this));
 
+            if (triggerOnChange) {
+                this.$select.change();
+            }
+
             this.updateButtonText();
             this.updateSelectAll();
-
-            if (triggerOnChange && selectedCount == 1) {
-                this.options.onChange($option, true);
-            }
         },
         select: function(selectValues, triggerOnChange) {
             return this.toggle(true, selectValues, triggerOnChange);
@@ -914,7 +905,7 @@
         toggleSelectAll: function() {
             var allBoxes = $("li:not(.multiselect-item) input:enabled", this.$ul);
             var checkedBoxes = allBoxes.filter(":checked");
-            var checked = checkedBoxes.length == allBoxes.length;
+            var checked = checkedBoxes.length < allBoxes.length;
             allBoxes.prop('checked', checked);
             allBoxes.closest('li').toggleClass(this.options.selectedClass, checked);
             $("option:enabled", this.$select).prop('selected', checked);
@@ -1007,7 +998,7 @@
                         disabled: !!option.disabled
                     });
 
-                    forEach(option.children, function(subOption) { // add children option tags
+                    $.each(option.children, function(index, subOption) { // add children option tags
                         $tag.append($('<option/>').attr({
                             value: subOption.value,
                             label: subOption.label || subOption.value,
@@ -1079,27 +1070,22 @@
         },
         hasSelectAll: function() { return this.hasSelectSomething('All'); },
         hasSelectNone: function() { return this.hasSelectSomething('None'); },
-        isSomething: function(something, value) {
+        isSomething: function(something, checked) {
             var isSomething = this.getSomething(something);
-            if (value === undefined) {
+            if (checked === undefined) {
                 return isSomething.prop('checked') === true;
             }
             else {
-                if (value) {
-                    isSomething.prop('checked', true);
-                    isSomething.closest('li').addClass(this.options.selectedClass);
-                    if (something == "All") this.selectAll();
-                }
-                else {
-                    isSomething.prop('checked', true);
-                    isSomething.closest('li').removeClass(this.options.selectedClass);
-                    if (something == "All") this.deselectAll();
-                }
+                checked = Boolean(checked);
+                isSomething.prop('checked', checked);
+                isSomething.closest('li').toggleClass(this.options.selectedClass, checked);
+                if (something == "All") this.toggleAll(checked);
             }
         },
         syncronizeSomething: function(something) {
             var isSomething = "is" + something;
-            this.isSomething(something, this.options[isSomething] && this.options[isSomething]());
+            if (isSomething in this.options)
+                this.isSomething(something, this.options[isSomething]());
         },
         isAll: function(value) { return this.isSomething('All', value); },
         isNone: function(value) { return this.isSomething('None', value); },
@@ -1117,18 +1103,16 @@
                 var selectAllInput = $('[value="' + this.options.selectAllValue + '"]', this.$ul);
                 var selectAllLi = selectAllInput.closest('li');
 
-                if (checkedBoxesLength === allBoxesLength
-                        || this.options.selectAllToggles
-                        && checkedBoxesLength == 0 && !this.isNone()) {
-                    selectAllInput.prop("checked", true);
-                    selectAllLi.addClass(this.options.selectedClass);
-                    if (triggerOnSelectAll) {
-                        this.options.onSelectAll();
-                    }
+                var isAll = checkedBoxesLength === allBoxesLength
+                    || 'isAll' in this.options && checkedBoxesLength == 0 && !this.isNone();
+
+                selectAllInput.prop("checked", isAll);
+                selectAllLi.toggleClass(this.options.selectedClass, isAll);
+                if ('isAll' in this.options) {
+                    this.options.isAll(isAll);
                 }
-                else {
-                    selectAllInput.prop("checked", false);
-                    selectAllLi.removeClass(this.options.selectedClass);
+                if (isAll && triggerOnSelectAll) {
+                    this.options.onSelectAll();
                 }
             }
         },
