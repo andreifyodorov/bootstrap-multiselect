@@ -674,7 +674,7 @@ describe('Bootstrap Multiselect Knockout interaction.', function() {
         $('body').append($select);
     });
 
-    it('Should pass checked elements to observable.', function() {
+    it('Should pass checked elements to observable and vice versa.', function() {
         var selectedOptions = ko.observableArray();
         $('#multiselect').each(function() {
             ko.applyBindingsToNode(this, {
@@ -690,14 +690,110 @@ describe('Bootstrap Multiselect Knockout interaction.', function() {
 
         expect(selectedOptions().length).toBe(0);
 
-        $('#multiselect-container li input[value="1"]').prop('checked', true);
-        $('#multiselect-container li input[value="1"]').trigger('change');
+        $('#multiselect-container li input[value="1"]').prop('checked', true).trigger('change');
 
         expect(selectedOptions().length).toBe(1);
 
         $('#multiselect').multiselect('select', '2', true);
 
         expect(selectedOptions().length).toBe(2);
+
+        selectedOptions.push(3);
+
+        expect($('#multiselect-container li input[value="3"]').prop('checked')).toBe(true);
+    });
+
+    it('Should work with arbituary objects as values.', function() {
+        var selectedOptions = ko.observableArray();
+        $('#multiselect').each(function() {
+            ko.applyBindingsToNode(this, {
+                options: options,
+                optionsText: 'name',
+                selectedOptions: selectedOptions,
+                multiselect: {
+                    buttonContainer: '<div id="multiselect-container"></div>'
+                }
+            });
+        });
+
+        expect(selectedOptions().length).toBe(0);
+
+        $('#multiselect-container li input').first().prop('checked', true).trigger('change');
+
+        expect(selectedOptions().length).toBe(1);
+        expect(selectedOptions()[0].name).toBe('option1');
+        expect(selectedOptions()[0].value).toBe(1);
+    });
+
+    it('Should work with isAll and isNone.', function() {
+        var selectedOptions = ko.observableArray();
+        var isNone = ko.observable(false);
+        var isAll = ko.observable(false);
+        $('#multiselect').each(function() {
+            ko.applyBindingsToNode(this, {
+                options: options,
+                optionsText: 'name',
+                optionsValue: 'value',
+                selectedOptions: selectedOptions,
+                isAll: isAll,
+                isNone: isNone,
+                multiselect: {
+                    buttonContainer: '<div id="multiselect-container"></div>',
+                    includeSelectAllOption: true,
+                    selectAllValue: 'multiselect-all',
+                    includeSelectNoneOption: true,
+                    selectNoneValue: 'multiselect-none'
+                }
+            });
+        });
+
+        expect(isNone()).toBe(false);
+        expect(isAll()).toBe(true);
+        expect(selectedOptions().length).toBe(0);
+
+        $('#multiselect').multiselect('select', '1', true);
+
+        expect(isNone()).toBe(false);
+        expect(isAll()).toBe(false);
+        expect(selectedOptions().length).toBe(1);
+
+        $.each(options, function() {
+            $('#multiselect').multiselect('select', this.value.toString(), true);
+        });
+
+        expect(isNone()).toBe(false);
+        expect(isAll()).toBe(true);
+        expect(selectedOptions().length).toBe(99);
+
+        $('#multiselect-container input[value="multiselect-all"]').trigger('click');
+
+        expect(isNone()).toBe(false);
+        expect(isAll()).toBe(true);
+        expect(selectedOptions().length).toBe(0);
+
+        $('#multiselect-container input[value="multiselect-none"]').trigger('click');
+
+        expect(isNone()).toBe(true);
+        expect(isAll()).toBe(true);
+        expect(selectedOptions().length).toBe(0);
+
+        $('#multiselect-container input[value="multiselect-all"]').trigger('click');
+
+        expect(isNone()).toBe(true);
+        expect(isAll()).toBe(false);
+        expect(selectedOptions().length).toBe(0);
+
+        $('#multiselect-container input[value="multiselect-none"]').trigger('click');
+
+        expect(isNone()).toBe(false);
+        expect(isAll()).toBe(true);
+        expect(selectedOptions().length).toBe(0);
+
+        $('#multiselect-container input[value="multiselect-all"]').trigger('click');
+
+        expect(isNone()).toBe(false);
+        expect(isAll()).toBe(true);
+        expect(selectedOptions().length).toBe(99);
     });
 
     afterEach(function() {

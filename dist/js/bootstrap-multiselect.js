@@ -17,8 +17,14 @@
                 var $element = $(element);
                 var config = ko.toJS(valueAccessor());
 
-                if (allBindings.has('isAny')) config['isAll'] = allBindings.get('isAny');
-                if (allBindings.has('isNone')) config['isNone'] = allBindings.get('isNone');
+                $.each(['isAll', 'isNone'], function(index, value) {
+                    if (allBindings.has(value)) {
+                        var observable = allBindings.get(value);
+                        if (ko.isObservable(observable)) {
+                            config[value] = observable;
+                        }
+                    }
+                });
 
                 $element.multiselect(config);
 
@@ -40,41 +46,6 @@
                     }
                 }
 
-                //value and selectedOptions are two-way, so these will be triggered even by our own actions.
-                //It needs some way to tell if they are triggered because of us or because of outside change.
-                //It doesn't loop but it's a waste of processing.
-                if (allBindings.has('value')) {
-                    var value = allBindings.get('value');
-                    if (ko.isObservable(value)) {
-                        ko.computed({
-                            read: function() {
-                                value();
-                                setTimeout(function() {
-                                    $element.multiselect('refresh');
-                                }, 1);
-                            },
-                            disposeWhenNodeIsRemoved: element
-                        }).extend({ rateLimit: 100, notifyWhenChangesStop: true });
-                    }
-                }
-
-                //Switched from arrayChange subscription to general subscription using 'refresh'.
-                //Not sure performance is any better using 'select' and 'deselect'.
-                if (allBindings.has('selectedOptions')) {
-                    var selectedOptions = allBindings.get('selectedOptions');
-                    if (ko.isObservable(selectedOptions)) {
-                        ko.computed({
-                            read: function() {
-                                selectedOptions();
-                                setTimeout(function() {
-                                    $element.multiselect('refresh');
-                                }, 1);
-                            },
-                            disposeWhenNodeIsRemoved: element
-                        }).extend({ rateLimit: 100, notifyWhenChangesStop: true });
-                    }
-                }
-
                 ko.utils.domNodeDisposal.addDisposeCallback(element, function() {
                     $element.multiselect('destroy');
                 });
@@ -82,10 +53,21 @@
 
             update: function(element, valueAccessor, allBindings, viewModel, bindingContext) {
                 var $element = $(element);
-                var config = ko.toJS(valueAccessor());
 
-                $element.multiselect('setOptions', config);
-                // $element.multiselect('rebuild');
+                var needsRefresh = $.each(['value', 'selectedOptions'], function(index, value) {
+                    if (allBindings.has(value)) {
+                        var observable = allBindings.get(value);
+                        if (ko.isObservable(observable)) {
+                            observable();
+                            return true;
+                        }
+                        return null;
+                    }
+                }).length > 0;
+
+                if (needsRefresh) {
+                    $element.multiselect('refresh');
+                }
             }
         };
     }
@@ -358,9 +340,6 @@
                 // Get the corresponding option.
                 var $option = $target.prop('$option');
 
-                var $optionsNotThis = $('option', this.$select).not($option);
-                var $checkboxesNotThis = $('input', this.$container).not($target);
-
                 if (isSelectAllOption) {
                     if (this.options.isAll) {
                         this.toggleSelectAll();
@@ -370,11 +349,13 @@
                     }
                 }
                 else if (isSelectNoneOption) {
-                    // this.options.onChangeIsNone.call(this, checked);
                     this.updateSelectAll();
                 }
                 else {
                     if (checked) {
+                        var $optionsNotThis = $('option', this.$select).not($option);
+                        var $checkboxesNotThis = $('input', this.$container).not($target);
+
                         $option.prop('selected', true);
 
                         if (this.options.multiple) {
@@ -382,6 +363,7 @@
                             $option.prop('selected', true);
                         }
                         else {
+
                             // Unselect all other options and corresponding checkboxes.
                             if (this.options.selectedClass) {
                                 $($checkboxesNotThis).closest('li').removeClass(this.options.selectedClass);
@@ -405,7 +387,7 @@
                     this.updateSelectAll();
                 }
 
-                this.$select.change();
+                this.change();
 
                 this.updateButtonText();
 
@@ -654,7 +636,8 @@
                 selectText = "select" + something + "Text",
                 hasSelect = "hasSelect" + something,
                 includeSelectOption = "includeSelect" + something + "Option",
-                includeSelectDivider = "includeSelect" + something + "Divider";
+                includeSelectDivider = "includeSelect" + something + "Divider",
+                isSomething = "is" + something;
 
             if (!this.options[includeSelectOption]) return;
             if (typeof this.options[selectValue] === 'number') {
@@ -664,7 +647,7 @@
             if (something == "All") {
                 if (!this.options.multiple) return;
                 var selectLength = $('option', this.$select).length;
-                if (selectLength <= this.options.includeSelectAllIfMoreThan) return
+                if (selectLength <= this.options.includeSelectAllIfMoreThan) return;
             }
 
             // Check whether to add a divider after the select all.
@@ -675,11 +658,16 @@
             var $li = $(this.options.templates.li);
             $('label', $li).addClass("checkbox");
 
+            var $input = $('<input type="checkbox" />');
             if (this.options[selectName]) {
-                $('label', $li).append('<input type="checkbox" name="' + this.options[selectName] + '" />');
+                $input.prop('name', this.options[selectName]);
             }
-            else {
-                $('label', $li).append('<input type="checkbox" />');
+            $('label', $li).append($input);
+
+            if (this.options[isSomething]) {
+                $input.each($.proxy(function(index, element) {
+                    ko.applyBindingsToNode(element, {checked: this.options[isSomething]});
+                }, this));
             }
 
             var $checkbox = $('input', $li);
@@ -807,10 +795,19 @@
             this.$select.data('multiselect', null);
         },
 
+        change: function() {
+            this.isChanging = true;
+            this.$select.change();
+            this.isChanging = false;
+        },
+
         /**
          * Refreshs the multiselect based on the selected options of the select.
          */
         refresh: function() {
+            if (this.isChanging) {
+                return;
+            }
             $('option', this.$select).each($.proxy(function(index, element) {
                 var $input = $(element).prop('$checkbox');
 
@@ -880,7 +877,7 @@
             }, this));
 
             if (triggerOnChange) {
-                this.$select.change();
+                this.change();
             }
 
             this.updateButtonText();
@@ -905,7 +902,7 @@
         toggleSelectAll: function() {
             var allBoxes = $("li:not(.multiselect-item) input:enabled", this.$ul);
             var checkedBoxes = allBoxes.filter(":checked");
-            var checked = checkedBoxes.length < allBoxes.length;
+            var checked = this.isNone() ? this.isAll() : checkedBoxes.length < allBoxes.length;
             allBoxes.prop('checked', checked);
             allBoxes.closest('li').toggleClass(this.options.selectedClass, checked);
             $("option:enabled", this.$select).prop('selected', checked);
@@ -964,8 +961,6 @@
             this.buildSelectSomething('None');
             this.buildDropdownOptions();
             this.buildFilter();
-            this.syncronizeSomething('All');
-            this.syncronizeSomething('None');
 
             this.updateButtonText();
             this.updateSelectAll();
@@ -1060,35 +1055,16 @@
         mergeOptions: function(options) {
             return $.extend(true, {}, this.settings, this.options, options);
         },
-
         getSomething: function(something) {
             var value = this.options['select' + something + 'Value'];
             return $('[value="' + value + '"]', this.$ul);
         },
-        hasSelectSomething: function(something) {
-            return this.getSomething(something).length > 0;
-        },
+        hasSelectSomething: function(something) { return this.getSomething(something).length > 0; },
         hasSelectAll: function() { return this.hasSelectSomething('All'); },
         hasSelectNone: function() { return this.hasSelectSomething('None'); },
-        isSomething: function(something, checked) {
-            var isSomething = this.getSomething(something);
-            if (checked === undefined) {
-                return isSomething.prop('checked') === true;
-            }
-            else {
-                checked = Boolean(checked);
-                isSomething.prop('checked', checked);
-                isSomething.closest('li').toggleClass(this.options.selectedClass, checked);
-                if (something == "All") this.toggleAll(checked);
-            }
-        },
-        syncronizeSomething: function(something) {
-            var isSomething = "is" + something;
-            if (isSomething in this.options)
-                this.isSomething(something, this.options[isSomething]());
-        },
-        isAll: function(value) { return this.isSomething('All', value); },
-        isNone: function(value) { return this.isSomething('None', value); },
+        isSomething: function(something) { return this.getSomething(something).prop('checked') === true; },
+        isAll: function() { return this.isSomething('All'); },
+        isNone: function() { return this.isSomething('None'); },
 
         /**
          * Updates the select all checkbox based on the currently displayed and selected checkboxes.
@@ -1103,14 +1079,18 @@
                 var selectAllInput = $('[value="' + this.options.selectAllValue + '"]', this.$ul);
                 var selectAllLi = selectAllInput.closest('li');
 
-                var isAll = checkedBoxesLength === allBoxesLength
-                    || 'isAll' in this.options && checkedBoxesLength == 0 && !this.isNone();
-
-                selectAllInput.prop("checked", isAll);
-                selectAllLi.toggleClass(this.options.selectedClass, isAll);
-                if ('isAll' in this.options) {
+                var isAll = checkedBoxesLength === allBoxesLength;
+                if (this.options.isAll) {
+                    if (checkedBoxesLength == 0) {
+                        if (this.isNone()) {
+                            return;
+                        }
+                        isAll = true;
+                    }
                     this.options.isAll(isAll);
                 }
+                selectAllInput.prop("checked", isAll);
+                selectAllLi.toggleClass(this.options.selectedClass, isAll);
                 if (isAll && triggerOnSelectAll) {
                     this.options.onSelectAll();
                 }
